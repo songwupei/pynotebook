@@ -1,1 +1,0 @@
-/home/song/NutstoreFiles/8-MyData/FinData/Blank/getscheme.py

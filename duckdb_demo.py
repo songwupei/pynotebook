@@ -1,1 +1,0 @@
-/home/song/scripts/4-py/duckdb_demo.py
