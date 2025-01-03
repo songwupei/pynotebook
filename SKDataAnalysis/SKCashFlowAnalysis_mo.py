@@ -1,82 +1,15 @@
 import marimo
 
-__generated_with = "0.10.6"
+__generated_with = "0.10.7"
 app = marimo.App(width="medium")
 
 
 @app.cell
 def _():
     import marimo as mo
-    return (mo,)
-
-
-@app.cell
-def _(alt):
-    def get_heatmap(sourcedf, X, Y, Z):
-        from altair import datum
-
-        _brush = alt.selection_interval()
-        heatmap = (
-            alt.Chart(sourcedf)
-            # .mark_point()
-            .mark_rect()  # 热力图/HEATMAP
-            .encode(
-                y=f"{Y}:O",
-                x=f"{X}:T",
-                color=f"{Z}:Q",
-                # size="交易当日每小时累计金额:Q",
-                # color=alt.Color("mean(交易当日每小时累计笔数):Q").legend(None),
-            )
-            .add_params(_brush)
-        ).interactive()
-
-        alt.data_transformers.disable_max_rows()
-        # Pay_hour_count_chart = alt.layer(point1).interactive()i
-        return heatmap
-    return (get_heatmap,)
-
-
-@app.cell
-def _(PayDate_count_df, Z_Size, alt):
-    def get_dual_chart(sourcedf, X, Y, Z_size, Z_color):
-        brush = alt.selection_interval()
-
-        bar = (
-            alt.Chart(PayDate_count_df)
-            .mark_bar()
-            .encode(
-                x=f"{X}:T",
-                y=f"{Y}:Q",
-            )
-            .add_params(brush)
-        )
-        point = (
-            alt.Chart(PayDate_count_df)
-            .mark_point()
-            .encode(
-                x=f"{X}:T",
-                y=f"{Y}:Q",
-                size=f"{Z_Size}:Q",
-                color=alt.Color(f"mean({Z_color}):Q").legend(None),
-            )
-            .add_params(brush)
-        )
-        line = (
-            alt.Chart(PayDate_count_df)
-            .mark_line()
-            .encode(x=f"{X}:T", y=f"{Y}:Q", color=alt.value("green"))
-            .add_params(brush)
-        )
-        alt.data_transformers.disable_max_rows()
-        Pay_count_dual_chart = (
-            alt.layer(point, line).resolve_scale(y="independent").interactive()
-        )
-        # duckdb.query(sql_WhoPayToMax).pl()
-        # alt.JupyterChart(Pay_count_dual_chart)
-        # Pay_count_dual_chart.save("SKCF_v2.html", inline=True)
-        # Pay_count_dual_chart.save("SKCF.png", ppi=400)
-        return Pay_count_dual_chart
-    return (get_dual_chart,)
+    from play_dataviz import get_dual_chart
+    from play_dataviz import get_heatmap
+    return get_dual_chart, get_heatmap, mo
 
 
 @app.cell
@@ -440,20 +373,16 @@ def _(PayHour_count_df, pl):
 @app.cell
 def _(duckdb, sql_FromPayViewByTime_show):
     PayTime_df = duckdb.query(sql_FromPayViewByTime_show).pl()
-    return (PayTime_df,)
-
-
-@app.cell
-def _(PayTime_df):
     PayTime_df.head(100)
-    return
+    return (PayTime_df,)
 
 
 @app.cell
 def _(PayTime_df, pl):
     PayTime_groupby30m_df = (
         PayTime_df.filter(
-            pl.col("交易日期时间").dt.hour().is_in(list(range(6, 21)))
+            pl.col("交易日期时间").dt.year() == 2024,
+            pl.col("交易日期时间").dt.hour().is_in(list(range(6, 21))),
         )
         .group_by_dynamic("交易日期时间", every="30m")
         .agg(
@@ -461,35 +390,85 @@ def _(PayTime_df, pl):
             pl.col("交易每个时间金额").sum().cast(pl.Int64).alias("交易金额"),
         )
         .with_columns(
-            pl.col("交易日期时间").dt.date().alias("交易日期"),
+            pl.col("交易日期时间").dt.to_string("%Y-%m-%d").alias("交易日期"),
             pl.col("交易日期时间").dt.to_string("%H:%M").alias("交易时间"),
         )
     )
+    PayTime_groupby30m_df.tail(1)
     return (PayTime_groupby30m_df,)
 
 
 @app.cell
-def _(PayTime_groupby30m_df):
-    PayTime_groupby30m_df.tail()
-    return
-
-
-@app.cell
 def _(PayTime_groupby30m_df, alt, get_heatmap):
-    JScount_heatmap = get_heatmap(
+    JScount_heatmap_30m = get_heatmap(
         PayTime_groupby30m_df, X="交易日期", Y="交易时间", Z="交易笔数"
     )
-    JSsum_heatmap = get_heatmap(
+    JSsum_heatmap_30m = get_heatmap(
         PayTime_groupby30m_df, X="交易日期", Y="交易时间", Z="交易金额"
     )
-    alt.hconcat(JScount_heatmap, JSsum_heatmap).resolve_scale(color="independent")
-    return JScount_heatmap, JSsum_heatmap
+    alt.hconcat(JScount_heatmap_30m, JSsum_heatmap_30m).resolve_scale(
+        color="independent"
+    )
+    return JScount_heatmap_30m, JSsum_heatmap_30m
 
 
 @app.cell
-def _(Pay_count_dual_chart):
-    Pay_count_dual_chart
-    return
+def _(PayTime_df, pl):
+    PayTime_groupby1d_df = (
+        PayTime_df
+        # .filter(pl.col("交易日期时间").dt.year() == 2023)
+        .group_by_dynamic("交易日期时间", every="1d")
+        .agg(
+            pl.col("交易每个时间笔数").sum().alias("交易笔数"),
+            pl.col("交易每个时间金额").sum().cast(pl.Int64).alias("交易金额"),
+        )
+        .with_columns(
+            # pl.col("交易日期时间").dt.weekday().alias("交易星期"),
+            # pl.col("交易日期时间").dt.week().alias("交易周数"),
+            pl.col("交易日期时间").dt.day().alias("交易日数"),
+            pl.col("交易日期时间").dt.to_string("%Y-%m").alias("交易年月"),
+        )
+    )
+    PayTime_groupby1d_df.tail(10)
+    return (PayTime_groupby1d_df,)
+
+
+@app.cell
+def _(PayTime_groupby1d_df, alt, get_heatmap):
+    JScount_heatmap_1d = get_heatmap(
+        PayTime_groupby1d_df,
+        Y="交易日数",
+        X="交易年月",
+        Z="交易笔数",
+        # PayTime_groupby1d_df, X="交易周数", Y="交易星期", Z="交易笔数"
+    )
+    JSsum_heatmap_1d = get_heatmap(
+        PayTime_groupby1d_df,
+        Y="交易日数",
+        X="交易年月",
+        Z="交易金额",
+        # PayTime_groupby1d_df, X="交易周数", Y="交易星期", Z="交易金额"
+    )
+    alt.hconcat(JScount_heatmap_1d, JSsum_heatmap_1d).resolve_scale(
+        color="independent"
+    )
+    return JScount_heatmap_1d, JSsum_heatmap_1d
+
+
+@app.cell
+def _(alt):
+    import numpy as np
+    import pandas as pd
+
+    # Compute x^2 + y^2 across a 2D grid
+    x, y = np.meshgrid(range(-5, 5), range(-5, 5))
+    z = x**2 + y**2
+
+    # Convert this grid to columnar data expected by Altair
+    source = pd.DataFrame({"x": x.ravel(), "y": y.ravel(), "z": z.ravel()})
+
+    alt.Chart(source).mark_rect().encode(x="x:O", y="y:O", color="z:Q")
+    return np, pd, source, x, y, z
 
 
 if __name__ == "__main__":
